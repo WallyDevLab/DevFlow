@@ -1,0 +1,62 @@
+@import "tailwindcss";
+
+/* DevFlow design tokens (dark default, light secondary).
+   Accent is teal, replacing the purple/indigo from the Stitch designs. */
+:root {
+  --background: #f8fafc;
+  --surface-1: #ffffff;
+  --surface-2: #f1f5f9;
+  --border: #e2e8f0;
+  --foreground: #0f172a;
+  --muted: #64748b;
+  --primary: #0d9488;
+  --primary-hover: #0f766e;
+  --primary-foreground: #ffffff;
+  --branch: #0ea5e9;
+  --success: #10b981;
+  --warning: #f59e0b;
+  --critical: #f43f5e;
+}
+
+.dark,
+:root:not(.light) {
+  --background: #0b0f17;
+  --surface-1: #111827;
+  --surface-2: #1f2937;
+  --border: #1f2937;
+  --foreground: #f9fafb;
+  --muted: #9ca3af;
+  --primary: #14b8a6;
+  --primary-hover: #0d9488;
+  --primary-foreground: #04201d;
+  --branch: #38bdf8;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-surface-1: var(--surface-1);
+  --color-surface-2: var(--surface-2);
+  --color-border: var(--border);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-branch: var(--branch);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-critical: var(--critical);
+  --font-sans: var(--font-geist-sans), Inter, system-ui, sans-serif;
+  --font-mono: var(--font-geist-mono);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+:focus-visible {
+  outline: 1px solid var(--primary);
+  box-shadow: 0 0 0 1px var(--primary);
+}

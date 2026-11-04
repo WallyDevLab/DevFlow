@@ -1,0 +1,16 @@
+{
+  "name": "devflow",
+  "private": true,
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "dev": "concurrently -n api,web -c cyan,green \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:web": "npm run dev -w apps/web",
+    "dev:api": "npm run start:dev -w apps/api",
+    "build": "npm run build -w apps/api && npm run build -w apps/web"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.6"
+  }
+}
