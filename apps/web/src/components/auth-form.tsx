@@ -6,6 +6,14 @@ import { useEffect, useState } from "react";
 import { ApiError } from "@/lib/api";
 import { useAuth } from "./auth-provider";
 
+// Only same-site paths are allowed as a post-login destination.
+function nextPath() {
+  const next = new URLSearchParams(window.location.search).get("next");
+  return next && next.startsWith("/") && !next.startsWith("//")
+    ? next
+    : "/dashboard";
+}
+
 const inputClass =
   "h-9 w-full rounded border border-border bg-background px-3 text-sm placeholder:text-muted focus:border-primary focus:outline-none";
 
@@ -17,7 +25,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
   const [submitting, setSubmitting] = useState(false);
 
   useEffect(() => {
-    if (user) router.replace("/dashboard");
+    if (user) router.replace(nextPath());
   }, [user, router]);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -30,7 +38,7 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
     try {
       if (isRegister) await register(String(form.get("name")), email, password);
       else await login(email, password);
-      router.replace("/dashboard");
+      router.replace(nextPath());
     } catch (err) {
       setError(
         err instanceof ApiError && err.status === 429
@@ -93,6 +101,15 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
             />
           </Field>
 
+          {!isRegister && (
+            <Link
+              href="/forgot-password"
+              className="-mt-2 self-end text-xs text-muted hover:text-foreground"
+            >
+              Forgot password?
+            </Link>
+          )}
+
           {error && (
             <p
               role="alert"
@@ -107,14 +124,18 @@ export function AuthForm({ mode }: { mode: "login" | "register" }) {
             disabled={submitting}
             className="h-9 rounded bg-primary text-sm font-medium text-primary-foreground transition hover:bg-primary-hover active:scale-[0.98] disabled:opacity-60"
           >
-            {submitting ? "Please wait…" : isRegister ? "Create account" : "Sign in"}
+            {submitting
+              ? "Please wait…"
+              : isRegister
+                ? "Create account"
+                : "Sign in"}
           </button>
         </form>
 
         <p className="mt-4 text-center text-sm text-muted">
           {isRegister ? "Already have an account? " : "New to DevFlow? "}
           <Link
-            href={isRegister ? "/login" : "/register"}
+            href={`${isRegister ? "/login" : "/register"}${typeof window !== "undefined" ? window.location.search : ""}`}
             className="text-primary hover:underline"
           >
             {isRegister ? "Sign in" : "Create an account"}

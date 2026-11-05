@@ -17,14 +17,26 @@ enum WorkspaceRole {
 }
 
 model User {
-  id           String            @id @default(uuid())
-  email        String            @unique
-  passwordHash String
-  name         String
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
-  memberships  WorkspaceMember[]
-  refreshTokens RefreshToken[]
+  id                 String                   @id @default(uuid())
+  email              String                   @unique
+  passwordHash       String
+  // Consecutive failed sign-ins; reaching the limit locks the account briefly.
+  failedLogins       Int                      @default(0)
+  lockedUntil        DateTime?
+  // Set when the owner proves they control the address (link in an email).
+  emailVerifiedAt    DateTime?
+  name               String
+  createdAt          DateTime                 @default(now())
+  updatedAt          DateTime                 @updatedAt
+  memberships        WorkspaceMember[]
+  refreshTokens      RefreshToken[]
+  assignedTasks      Task[]                   @relation("TaskAssignee")
+  reportedTasks      Task[]                   @relation("TaskReporter")
+  comments           TaskComment[]
+  passwordResets     PasswordResetToken[]
+  emailVerifications EmailVerificationToken[]
+  notifications      Notification[]
+  notificationPrefs  NotificationPreference[]
 }
 
 model RefreshToken {
@@ -40,13 +52,15 @@ model RefreshToken {
 }
 
 model Workspace {
-  id          String            @id @default(uuid())
-  name        String
-  createdAt   DateTime          @default(now())
-  updatedAt   DateTime          @updatedAt
-  members     WorkspaceMember[]
-  invitations Invitation[]
-  auditLogs   AuditLog[]
+  id                 String              @id @default(uuid())
+  name               String
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  members            WorkspaceMember[]
+  invitations        Invitation[]
+  auditLogs          AuditLog[]
+  projects           Project[]
+  githubInstallation GitHubInstallation?
 }
 
 model WorkspaceMember {
@@ -87,4 +101,321 @@ model AuditLog {
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@index([workspaceId, createdAt])
+}
+
+enum ProjectStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum StatusCategory {
+  BACKLOG
+  TODO
+  IN_PROGRESS
+  IN_REVIEW
+  DONE
+}
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+model Project {
+  id             String            @id @default(uuid())
+  workspaceId    String
+  name           String
+  key            String
+  description    String            @default("")
+  status         ProjectStatus     @default(ACTIVE)
+  nextTaskNumber Int               @default(1)
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  workspace      Workspace         @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  statuses       WorkflowStatus[]
+  tasks          Task[]
+  sprints        Sprint[]
+  repository     GitHubRepository?
+  labels         Label[]
+
+  @@unique([workspaceId, key])
+}
+
+model WorkflowStatus {
+  id        String         @id @default(uuid())
+  projectId String
+  name      String
+  category  StatusCategory
+  position  Int
+  // Soft work-in-progress limit shown on the board; null means no limit.
+  wipLimit  Int?
+  project   Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks     Task[]
+
+  @@unique([projectId, name])
+  @@index([projectId, position])
+}
+
+model Task {
+  id            String         @id @default(uuid())
+  projectId     String
+  number        Int
+  title         String
+  description   String         @default("")
+  statusId      String
+  priority      TaskPriority   @default(MEDIUM)
+  assigneeId    String?
+  reporterId    String
+  storyPoints   Int?
+  dueDate       DateTime?
+  blocked       Boolean        @default(false)
+  blockedReason String?
+  position      Float          @default(0)
+  backlogRank   Float          @default(0)
+  sprintId      String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  project       Project        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  status        WorkflowStatus @relation(fields: [statusId], references: [id])
+  assignee      User?          @relation("TaskAssignee", fields: [assigneeId], references: [id], onDelete: SetNull)
+  reporter      User           @relation("TaskReporter", fields: [reporterId], references: [id])
+  activity      TaskActivity[]
+  sprint        Sprint?        @relation(fields: [sprintId], references: [id], onDelete: SetNull)
+  pullRequests  PullRequest[]
+  labels        Label[]
+  comments      TaskComment[]
+
+  @@unique([projectId, number])
+  @@index([statusId, position])
+  @@index([assigneeId])
+  @@index([projectId, sprintId, backlogRank])
+}
+
+// Append-only history. Cycle time, blocked duration and sprint reports are
+// derived from these events rather than from mutable counters.
+model TaskActivity {
+  id        String   @id @default(uuid())
+  taskId    String
+  actorId   String
+  type      String
+  data      Json?
+  createdAt DateTime @default(now())
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId, createdAt])
+}
+
+enum SprintStatus {
+  PLANNING
+  ACTIVE
+  COMPLETED
+}
+
+model Sprint {
+  id          String        @id @default(uuid())
+  projectId   String
+  name        String
+  goal        String        @default("")
+  startDate   DateTime
+  endDate     DateTime
+  status      SprintStatus  @default(PLANNING)
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  project     Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks       Task[]
+  events      SprintEvent[]
+
+  @@index([projectId, status])
+}
+
+enum SprintEventType {
+  COMMITTED
+  ADDED
+  REMOVED
+  COMPLETED
+  CARRIED_OVER
+}
+
+// Append-only scope history. The original commitment and everything that
+// changed afterwards is derived from these rows, so reports never shift when
+// tasks are edited later. taskId has no FK so history survives task deletion.
+model SprintEvent {
+  id        String          @id @default(uuid())
+  sprintId  String
+  taskId    String
+  type      SprintEventType
+  points    Int             @default(0)
+  data      Json?
+  createdAt DateTime        @default(now())
+  sprint    Sprint          @relation(fields: [sprintId], references: [id], onDelete: Cascade)
+
+  @@index([sprintId, type])
+}
+
+// One GitHub App installation per workspace. Only the installation id is
+// stored; access tokens are minted on demand and never persisted.
+model GitHubInstallation {
+  id             String             @id @default(uuid())
+  workspaceId    String             @unique
+  installationId BigInt             @unique
+  accountLogin   String
+  accountType    String
+  connectedById  String
+  createdAt      DateTime           @default(now())
+  workspace      Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  repositories   GitHubRepository[]
+}
+
+// A repository linked to a project. A repo can belong to only one project, so
+// webhooks can be routed unambiguously.
+model GitHubRepository {
+  id             String             @id @default(uuid())
+  installationId String
+  githubId       BigInt             @unique
+  fullName       String
+  projectId      String             @unique
+  createdAt      DateTime           @default(now())
+  installation   GitHubInstallation @relation(fields: [installationId], references: [id], onDelete: Cascade)
+  project        Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  pullRequests   PullRequest[]
+}
+
+model PullRequest {
+  id           String           @id @default(uuid())
+  repositoryId String
+  number       Int
+  title        String
+  url          String
+  state        String
+  draft        Boolean          @default(false)
+  merged       Boolean          @default(false)
+  headBranch   String
+  headSha      String
+  author       String
+  reviewState  String?
+  checksState  String?
+  taskId       String?
+  openedAt     DateTime
+  mergedAt     DateTime?
+  updatedAt    DateTime         @updatedAt
+  repository   GitHubRepository @relation(fields: [repositoryId], references: [id], onDelete: Cascade)
+  task         Task?            @relation(fields: [taskId], references: [id], onDelete: SetNull)
+
+  @@unique([repositoryId, number])
+  @@index([taskId])
+  @@index([repositoryId, headSha])
+}
+
+enum WebhookStatus {
+  RECEIVED
+  PROCESSED
+  IGNORED
+  FAILED
+}
+
+// Every delivery is recorded by GitHub's delivery id, which makes processing
+// idempotent: a redelivered event is acknowledged but never applied twice.
+model WebhookEvent {
+  id          String        @id @default(uuid())
+  deliveryId  String        @unique
+  event       String
+  action      String?
+  status      WebhookStatus @default(RECEIVED)
+  error       String?
+  receivedAt  DateTime      @default(now())
+  processedAt DateTime?
+}
+
+// Labels belong to a project; tasks reference them through an implicit
+// many-to-many join table.
+model Label {
+  id        String   @id @default(uuid())
+  projectId String
+  name      String
+  color     String
+  createdAt DateTime @default(now())
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  tasks     Task[]
+
+  @@unique([projectId, name])
+}
+
+model TaskComment {
+  id        String   @id @default(uuid())
+  taskId    String
+  authorId  String
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  edited    Boolean  @default(false)
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  author    User     @relation(fields: [authorId], references: [id])
+
+  @@index([taskId, createdAt])
+}
+
+// Single-use, short-lived. Only a hash is stored, like refresh tokens.
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+enum NotificationType {
+  TASK_ASSIGNED
+  MENTION
+  TASK_BLOCKED
+  SPRINT_STARTED
+  SPRINT_COMPLETED
+  PULL_REQUEST
+}
+
+// In-app notification. The message and link are composed by the server when
+// the event happens, so they are a snapshot of what the recipient was told.
+model Notification {
+  id          String           @id @default(uuid())
+  userId      String
+  workspaceId String
+  type        NotificationType
+  message     String
+  link        String
+  actorId     String?
+  readAt      DateTime?
+  createdAt   DateTime         @default(now())
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt, createdAt])
+}
+
+// A row exists only once a user changes a setting; the default is on.
+model NotificationPreference {
+  userId String
+  type   NotificationType
+  inApp  Boolean          @default(true)
+  user   User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@id([userId, type])
+}
+
+// Single-use, time-limited, stored hashed (like password-reset tokens).
+model EmailVerificationToken {
+  id        String    @id @default(uuid())
+  userId    String
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }

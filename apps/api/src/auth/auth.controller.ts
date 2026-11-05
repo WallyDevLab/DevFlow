@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   HttpCode,
+  Patch,
   Post,
   Req,
   Res,
@@ -10,9 +11,18 @@ import {
 } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
-import { LoginDto, RegisterDto } from './auth.dto.js';
+import {
+  ChangePasswordDto,
+  ForgotPasswordDto,
+  LoginDto,
+  RegisterDto,
+  ResetPasswordDto,
+  UpdateProfileDto,
+  VerifyEmailDto,
+} from './auth.dto.js';
 import { AuthService, REFRESH_TTL_MS } from './auth.service.js';
 import { type AuthedRequest, JwtAuthGuard } from './jwt-auth.guard.js';
+import { OriginGuard } from './origin.guard.js';
 
 const COOKIE = 'refresh_token';
 const cookieOptions = {
@@ -49,6 +59,7 @@ export class AuthController {
   }
 
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
+  @UseGuards(OriginGuard)
   @HttpCode(200)
   @Post('refresh')
   async refresh(
@@ -58,14 +69,74 @@ export class AuthController {
     return this.respond(res, await this.auth.refresh(req.cookies?.[COOKIE]));
   }
 
+  @UseGuards(OriginGuard)
   @HttpCode(204)
   @Post('logout')
-  async logout(
-    @Req() req: Request,
-    @Res({ passthrough: true }) res: Response,
-  ) {
+  async logout(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
     await this.auth.logout(req.cookies?.[COOKIE]);
     res.clearCookie(COOKIE, cookieOptions);
+  }
+
+  @Throttle(AUTH_LIMIT)
+  @HttpCode(202)
+  @Post('forgot-password')
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    await this.auth.forgotPassword(dto.email);
+    // Same answer whether or not the address exists.
+    return {
+      message: 'If that email is registered, a reset link is on its way.',
+    };
+  }
+
+  @Throttle(AUTH_LIMIT)
+  @HttpCode(204)
+  @Post('reset-password')
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    await this.auth.resetPassword(dto.token, dto.password);
+  }
+
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @HttpCode(204)
+  @Post('verify-email')
+  async verifyEmail(@Body() dto: VerifyEmailDto) {
+    await this.auth.verifyEmail(dto.token);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Throttle(AUTH_LIMIT)
+  @HttpCode(202)
+  @Post('resend-verification')
+  async resendVerification(@Req() req: AuthedRequest) {
+    await this.auth.resendVerification(req.user.id);
+    return {
+      message:
+        'If your address still needs verifying, a new link is on its way.',
+    };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Throttle(AUTH_LIMIT)
+  @HttpCode(200)
+  @Post('change-password')
+  async changePassword(
+    @Req() req: AuthedRequest,
+    @Body() dto: ChangePasswordDto,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    return this.respond(
+      res,
+      await this.auth.changePassword(
+        req.user.id,
+        dto.currentPassword,
+        dto.newPassword,
+      ),
+    );
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('me')
+  updateProfile(@Req() req: AuthedRequest, @Body() dto: UpdateProfileDto) {
+    return this.auth.updateProfile(req.user.id, dto.name);
   }
 
   @UseGuards(JwtAuthGuard)

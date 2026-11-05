@@ -6,14 +6,16 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 
 export interface User {
   id: string;
   email: string;
   name: string;
+  emailVerified: boolean;
 }
 
 interface Session {
@@ -28,6 +30,17 @@ interface AuthContextValue {
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  changePassword: (
+    currentPassword: string,
+    newPassword: string,
+  ) => Promise<void>;
+  updateProfile: (name: string) => Promise<void>;
+  /** Re-reads the signed-in user, e.g. after verifying the email address. */
+  reloadUser: () => Promise<void>;
+  request: <T>(
+    path: string,
+    options?: { method?: string; body?: unknown },
+  ) => Promise<T>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -45,7 +58,13 @@ function restoreSession(): Promise<Session | null> {
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null);
+  const [session, setSessionState] = useState<Session | null>(null);
+  const tokenRef = useRef<string | null>(null);
+  // Updates the ref synchronously so requests made right after login use the new token.
+  const setSession = useCallback((s: Session | null) => {
+    tokenRef.current = s?.accessToken ?? null;
+    setSessionState(s);
+  }, []);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -58,11 +77,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       active = false;
     };
-  }, []);
+  }, [setSession]);
 
-  const login = useCallback(async (email: string, password: string) => {
-    setSession(await api<Session>("/auth/login", { body: { email, password } }));
-  }, []);
+  const login = useCallback(
+    async (email: string, password: string) => {
+      setSession(
+        await api<Session>("/auth/login", { body: { email, password } }),
+      );
+    },
+    [setSession],
+  );
 
   const register = useCallback(
     async (name: string, email: string, password: string) => {
@@ -72,13 +96,63 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }),
       );
     },
-    [],
+    [setSession],
+  );
+
+  // Authenticated request; on a 401 (expired access token) it refreshes the
+  // session once and retries.
+  const request = useCallback(
+    async <T,>(
+      path: string,
+      options: { method?: string; body?: unknown } = {},
+    ) => {
+      try {
+        return await api<T>(path, { ...options, token: tokenRef.current });
+      } catch (err) {
+        if (!(err instanceof ApiError) || err.status !== 401) throw err;
+        refreshInFlight = null;
+        const fresh = await restoreSession();
+        setSession(fresh);
+        if (!fresh) throw err;
+        return api<T>(path, { ...options, token: fresh.accessToken });
+      }
+    },
+    [setSession],
+  );
+
+  // Changing the password signs out every other device and returns a fresh
+  // session for this one.
+  const changePassword = useCallback(
+    async (currentPassword: string, newPassword: string) => {
+      setSession(
+        await request<Session>("/auth/change-password", {
+          body: { currentPassword, newPassword },
+        }),
+      );
+    },
+    [request, setSession],
+  );
+
+  const reloadUser = useCallback(async () => {
+    const user = await request<User>("/auth/me");
+    setSessionState((prev) => (prev ? { ...prev, user } : prev));
+  }, [request]);
+
+  const updateProfile = useCallback(
+    async (name: string) => {
+      const user = await request<User>("/auth/me", {
+        method: "PATCH",
+        body: { name },
+      });
+      setSessionState((prev) => (prev ? { ...prev, user } : prev));
+    },
+    [request],
   );
 
   const logout = useCallback(async () => {
     await api("/auth/logout", { method: "POST" }).catch(() => undefined);
     setSession(null);
-  }, []);
+  }, [setSession]);
 
   const value = useMemo(
     () => ({
@@ -88,8 +162,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       login,
       register,
       logout,
+      request,
+      changePassword,
+      updateProfile,
+      reloadUser,
     }),
-    [session, loading, login, register, logout],
+    [
+      session,
+      loading,
+      login,
+      register,
+      logout,
+      request,
+      changePassword,
+      updateProfile,
+      reloadUser,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

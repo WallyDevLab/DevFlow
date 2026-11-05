@@ -20,9 +20,10 @@ export class JwtAuthGuard implements CanActivate {
     const [scheme, token] = req.headers.authorization?.split(' ') ?? [];
     if (scheme !== 'Bearer' || !token) throw new UnauthorizedException();
     try {
-      const payload = await this.jwt.verifyAsync<{ sub: string; email: string }>(
-        token,
-      );
+      const payload = await this.jwt.verifyAsync<{
+        sub: string;
+        email: string;
+      }>(token);
       req.user = { id: payload.sub, email: payload.email };
       return true;
     } catch {

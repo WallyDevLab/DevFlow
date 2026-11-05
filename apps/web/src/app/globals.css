@@ -16,6 +16,11 @@
   --success: #10b981;
   --warning: #f59e0b;
   --critical: #f43f5e;
+  /* Chart series, validated against the light surface (#ffffff). */
+  --chart-1: #2a78d6; /* blue */
+  --chart-2: #0d9488; /* teal */
+  --chart-grid: #e2e8f0;
+  --chart-axis: #94a3b8;
 }
 
 .dark,
@@ -30,6 +35,11 @@
   --primary-hover: #0d9488;
   --primary-foreground: #04201d;
   --branch: #38bdf8;
+  /* Same hues stepped for the dark surface (#111827). */
+  --chart-1: #3987e5;
+  --chart-2: #10a090;
+  --chart-grid: #1f2937;
+  --chart-axis: #6b7280;
 }
 
 @theme inline {
@@ -46,6 +56,8 @@
   --color-success: var(--success);
   --color-warning: var(--warning);
   --color-critical: var(--critical);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
   --font-sans: var(--font-geist-sans), Inter, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono);
 }

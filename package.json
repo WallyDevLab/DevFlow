@@ -8,9 +8,17 @@
     "dev": "concurrently -n api,web -c cyan,green \"npm:dev:api\" \"npm:dev:web\"",
     "dev:web": "npm run dev -w apps/web",
     "dev:api": "npm run start:dev -w apps/api",
-    "build": "npm run build -w apps/api && npm run build -w apps/web"
+    "build": "npm run build -w apps/api && npm run build -w apps/web",
+    "lint": "npm run lint -w apps/api && npm run lint -w apps/web",
+    "typecheck": "npm run typecheck -w apps/api && npm run typecheck -w apps/web",
+    "format": "npm run format -w apps/api && npm run format -w apps/web && prettier --write e2e playwright.config.ts",
+    "format:check": "npm run format:check -w apps/api && npm run format:check -w apps/web && prettier --check e2e playwright.config.ts",
+    "test": "npm run test:cov -w apps/api && npm run test:cov -w apps/web",
+    "test:e2e": "playwright test"
   },
   "devDependencies": {
-    "concurrently": "^10.0.6"
+    "@playwright/test": "^1.64.1",
+    "concurrently": "^10.0.6",
+    "prettier": "^3.9.10"
   }
 }
