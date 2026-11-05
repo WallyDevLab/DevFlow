@@ -24,7 +24,7 @@ jobs:
     name: Lint, format, types and build
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -68,7 +68,7 @@ jobs:
       # against any database whose name doesn't contain "test".
       TEST_DATABASE_URL: postgresql://devflow:devflow@localhost:5432/devflow_test
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -88,7 +88,7 @@ jobs:
     name: Web tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -124,7 +124,7 @@ jobs:
       TEST_DATABASE_URL: postgresql://devflow:devflow@localhost:5432/devflow_test
       NEXT_PUBLIC_API_URL: http://localhost:4100/api/v1
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -154,7 +154,7 @@ jobs:
     name: Dependency audit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
